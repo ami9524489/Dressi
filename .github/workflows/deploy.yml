@@ -9,6 +9,9 @@ concurrency:
   group: deploy
   cancel-in-progress: false
 
+env:
+  PROJECT: dressi-5f536
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -28,23 +31,44 @@ jobs:
       - name: Write deploy credentials
         env:
           SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-        run: printf '%s' "$SA_JSON" > "$RUNNER_TEMP/sa.json"
+        run: |
+          printf '%s' "$SA_JSON" > "$RUNNER_TEMP/sa.json"
+          python3 -c "import json,sys;d=json.load(open(sys.argv[1]));assert d.get('type')=='service_account',d.get('type');print('service account:',d['client_email'])" "$RUNNER_TEMP/sa.json" \
+            || { echo "::error::FIREBASE_SERVICE_ACCOUNT is not a valid service account JSON"; exit 1; }
+          gcloud auth activate-service-account --key-file="$RUNNER_TEMP/sa.json" --quiet
+          gcloud config set project "$PROJECT" --quiet
+
+      - name: Enable required Google APIs
+        run: |
+          set -o pipefail
+          gcloud services enable \
+            secretmanager.googleapis.com cloudfunctions.googleapis.com cloudbuild.googleapis.com \
+            artifactregistry.googleapis.com run.googleapis.com eventarc.googleapis.com pubsub.googleapis.com \
+            firestore.googleapis.com firebasestorage.googleapis.com storage.googleapis.com \
+            firebaserules.googleapis.com firebasehosting.googleapis.com cloudbilling.googleapis.com \
+            generativelanguage.googleapis.com --quiet 2>&1 | tee "$RUNNER_TEMP/apis.log" \
+            || { echo "::error::$(tail -c 900 "$RUNNER_TEMP/apis.log" | tr '\n' ' ')"; exit 1; }
 
       - name: Store the Gemini key in Secret Manager
         env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          printf '%s' "$GEMINI_API_KEY" > "$RUNNER_TEMP/gk.txt"
-          npx -y firebase-tools@13 functions:secrets:set GEMINI_API_KEY \
-            --data-file "$RUNNER_TEMP/gk.txt" --project dressi-5f536 --non-interactive --force
-          rm -f "$RUNNER_TEMP/gk.txt"
+          set -o pipefail
+          [ -n "$GEMINI_API_KEY" ] || { echo "::error::GEMINI_API_KEY secret is empty"; exit 1; }
+          gcloud secrets describe GEMINI_API_KEY --quiet >/dev/null 2>&1 \
+            || gcloud secrets create GEMINI_API_KEY --replication-policy=automatic --quiet
+          printf '%s' "$GEMINI_API_KEY" | gcloud secrets versions add GEMINI_API_KEY --data-file=- --quiet 2>&1 | tee "$RUNNER_TEMP/sec.log" \
+            || { echo "::error::$(tail -c 900 "$RUNNER_TEMP/sec.log" | tr '\n' ' ')"; exit 1; }
 
       - name: Deploy
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
-        run: npx -y firebase-tools@13 deploy --project dressi-5f536 --non-interactive --force
+        run: |
+          set -o pipefail
+          npx -y firebase-tools@13 deploy --project "$PROJECT" --non-interactive --force 2>&1 | tee "$RUNNER_TEMP/deploy.log" \
+            || { grep -iE "error|denied|permission|failed|not been used|billing" "$RUNNER_TEMP/deploy.log" | tail -n 12 | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
+          echo "::notice::Live at https://$PROJECT.web.app"
 
       - name: Remove credentials
         if: always()
-        run: rm -f "$RUNNER_TEMP/sa.json"
+        run: rm -f "$RUNNER_TEMP/sa.json" "$RUNNER_TEMP"/*.log
