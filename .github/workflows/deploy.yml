@@ -33,7 +33,7 @@ jobs:
           SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
           printf '%s' "$SA_JSON" > "$RUNNER_TEMP/sa.json"
-          python3 -c "import json,sys;d=json.load(open(sys.argv[1]));assert d.get('type')=='service_account',d.get('type');print('service account:',d['client_email'])" "$RUNNER_TEMP/sa.json" \
+          python3 -c "import json,sys;d=json.load(open(sys.argv[1]));assert d.get('type')=='service_account',d.get('type');print('::notice::deploying as '+d['client_email'])" "$RUNNER_TEMP/sa.json" \
             || { echo "::error::FIREBASE_SERVICE_ACCOUNT is not a valid service account JSON"; exit 1; }
           gcloud auth activate-service-account --key-file="$RUNNER_TEMP/sa.json" --quiet
           gcloud config set project "$PROJECT" --quiet
