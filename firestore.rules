@@ -1,0 +1,33 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Every user only ever sees and edits their own data.
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      // The profile and usage counters are written by the server only.
+      allow write: if false;
+
+      match /items/{itemId} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+
+        // The client may create a placeholder item that the server will process.
+        allow create: if request.auth != null && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['status', 'createdAt', 'rawPath'])
+          && request.resource.data.status == 'uploading'
+          && request.resource.data.rawPath == 'users/' + uid + '/raw/' + itemId + '.jpg';
+
+        // The client may only edit the fields a person fills in by hand.
+        allow update: if request.auth != null && request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['name', 'size', 'fit', 'category', 'notes', 'updatedAt']);
+
+        allow delete: if request.auth != null && request.auth.uid == uid;
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
