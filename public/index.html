@@ -147,6 +147,20 @@ h1,h2{font-family:'Bellefair',serif;font-weight:400;margin:0}
         <svg aria-hidden="true" width="20" height="20" viewBox="0 0 48 48"><path fill="#1E1915" d="M44.5 20H24v8.5h11.8C34.7 33.9 30.1 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 11.8 2 2 11.8 2 24s9.8 22 22 22c11 0 21-8 21-22 0-1.3-.2-2.7-.5-4z"/></svg>
         המשך עם גוגל
       </button>
+      <button class="btn ghost" id="appleBtn" type="button" style="width:100%;margin-top:10px">
+        <svg aria-hidden="true" width="18" height="20" viewBox="0 0 384 512" fill="currentColor"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>
+        המשך עם Apple
+      </button>
+      <button class="btn ghost" id="emailBtn" type="button" style="width:100%;margin-top:10px">המשך עם אימייל</button>
+      <form id="emailForm" hidden style="margin-top:12px">
+        <div class="field" style="margin-top:0"><label for="eMail">אימייל</label><input id="eMail" type="email" autocomplete="email" inputmode="email" required dir="ltr"></div>
+        <div class="field"><label for="ePass">סיסמה, לפחות שמונה תווים</label><input id="ePass" type="password" autocomplete="current-password" minlength="8" required dir="ltr"></div>
+        <div class="row" style="margin-top:12px">
+          <button class="btn gold" type="submit" id="eIn">כניסה</button>
+          <button class="btn ghost" type="button" id="eUp">הרשמה</button>
+        </div>
+        <button type="button" id="eReset" style="background:none;border:0;color:var(--gold-1);margin-top:10px;font-size:14px;width:100%">שכחתי סיסמה</button>
+      </form>
       <div class="privacy">
         <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
         התמונות שלך פרטיות, ורק אתה רואה אותן
@@ -233,7 +247,7 @@ h1,h2{font-family:'Bellefair',serif;font-weight:400;margin:0}
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithRedirect, signInWithPopup, getRedirectResult, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import { getAuth, onAuthStateChanged, GoogleAuthProvider, OAuthProvider, signInWithRedirect, signInWithPopup, getRedirectResult, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js';
@@ -267,13 +281,47 @@ document.addEventListener('click', (e) => { const g = e.target.closest('[data-go
 $('#dressBtn').addEventListener('click', () => toast('המדידה על הבמה נפתחת אחרי שתיצור את הדמות שלך'));
 
 /* ---------- auth ---------- */
-const provider = new GoogleAuthProvider();
+const google = new GoogleAuthProvider();
+const apple = new OAuthProvider('apple.com');
+apple.addScope('email'); apple.addScope('name'); apple.setCustomParameters({ locale: 'he' });
 const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
-$('#googleBtn').addEventListener('click', async () => {
+async function social(provider) {
   try { standalone ? await signInWithRedirect(auth, provider) : await signInWithPopup(auth, provider); }
-  catch (e) { if (e.code !== 'auth/popup-closed-by-user') toast('ההתחברות נכשלה. נסה שוב.'); }
+  catch (e) { if (e.code !== 'auth/popup-closed-by-user' && e.code !== 'auth/cancelled-popup-request') toast(authMsg(e)); }
+}
+$('#googleBtn').addEventListener('click', () => social(google));
+$('#appleBtn').addEventListener('click', () => social(apple));
+$('#emailBtn').addEventListener('click', () => { $('#emailForm').hidden = false; $('#emailBtn').hidden = true; $('#eMail').focus(); });
+function authMsg(e) {
+  const m = {
+    'auth/invalid-credential': 'האימייל או הסיסמה לא נכונים',
+    'auth/wrong-password': 'האימייל או הסיסמה לא נכונים',
+    'auth/user-not-found': 'האימייל או הסיסמה לא נכונים',
+    'auth/email-already-in-use': 'כבר יש חשבון עם האימייל הזה. אפשר להיכנס',
+    'auth/weak-password': 'הסיסמה צריכה להיות לפחות שמונה תווים',
+    'auth/invalid-email': 'כתובת האימייל לא תקינה',
+    'auth/too-many-requests': 'יותר מדי ניסיונות. נסה שוב בעוד כמה דקות',
+    'auth/account-exists-with-different-credential': 'האימייל הזה כבר רשום בדרך התחברות אחרת'
+  };
+  return m[e.code] || 'ההתחברות נכשלה. נסה שוב.';
+}
+const creds = () => [$('#eMail').value.trim(), $('#ePass').value];
+$('#emailForm').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  try { await signInWithEmailAndPassword(auth, ...creds()); } catch (e) { toast(authMsg(e)); }
 });
-getRedirectResult(auth).catch(() => toast('ההתחברות נכשלה. נסה שוב.'));
+$('#eUp').addEventListener('click', async () => {
+  const [m, p] = creds();
+  if (p.length < 8) { toast('הסיסמה צריכה להיות לפחות שמונה תווים'); return; }
+  try { await createUserWithEmailAndPassword(auth, m, p); } catch (e) { toast(authMsg(e)); }
+});
+$('#eReset').addEventListener('click', async () => {
+  const [m] = creds();
+  if (!m) { toast('כתוב קודם את האימייל'); $('#eMail').focus(); return; }
+  try { await sendPasswordResetEmail(auth, m); } catch (e) {}
+  toast('אם יש חשבון עם האימייל הזה, שלחנו אליו קישור לאיפוס');
+});
+getRedirectResult(auth).catch((e) => toast(authMsg(e)));
 $('#signOutBtn').addEventListener('click', () => signOut(auth));
 
 onAuthStateChanged(auth, (u) => {
@@ -283,7 +331,7 @@ onAuthStateChanged(auth, (u) => {
   if (!u) { show('signin'); return; }
   const photo = u.photoURL || '';
   for (const img of [$('#avatarImg'), $('.avatarImg2'), $('#meImg')]) { img.src = photo; img.hidden = !photo; }
-  $('#meName').textContent = u.displayName || '';
+  $('#meName').textContent = u.displayName || (u.email ? u.email.split('@')[0] : '');
   $('#meEmail').textContent = u.email || '';
   const hour = new Date().getHours();
   $('#stageTitle').textContent = (hour < 12 ? 'בוקר טוב' : hour < 18 ? 'צהריים טובים' : 'ערב טוב') + (u.displayName ? ', ' + u.displayName.split(' ')[0] : '');
