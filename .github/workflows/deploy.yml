@@ -67,7 +67,18 @@ jobs:
           set -o pipefail
           npx -y firebase-tools@13 deploy --project "$PROJECT" --non-interactive --force 2>&1 | tee "$RUNNER_TEMP/deploy.log" \
             || { grep -iE "error|denied|permission|failed|not been used|billing" "$RUNNER_TEMP/deploy.log" | tail -n 12 | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
-          echo "::notice::Live at https://$PROJECT.web.app"
+          grep -iE "hosting|release|Deploy complete|site" "$RUNNER_TEMP/deploy.log" | tail -n 8 | while IFS= read -r l; do echo "::notice::$l"; done
+
+      - name: Verify the site answers
+        run: |
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -s -o "$RUNNER_TEMP/page.html" -w "%{http_code}" "https://$PROJECT.web.app/")
+            init=$(curl -s -o /dev/null -w "%{http_code}" "https://$PROJECT.web.app/__/firebase/init.json")
+            if grep -q "Dressi" "$RUNNER_TEMP/page.html"; then echo "::notice::site OK ($code), init.json $init"; exit 0; fi
+            sleep 20
+          done
+          echo "::error::site answered $code without the app; init.json $init; $(head -c 300 "$RUNNER_TEMP/page.html" | tr '\n' ' ')"
+          exit 1
 
       - name: Remove credentials
         if: always()
